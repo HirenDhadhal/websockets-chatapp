@@ -1,46 +1,22 @@
-import { WebSocketServer, WebSocket } from 'ws';
+import express from "express";
+import cors from "cors";
+import http from "http";
+import { setupWebsocket } from "./services/websocket";
 
-const wss = new WebSocketServer({ port: 8080 });
+const app = express();
 
-interface Connections {
-  roomId: string;
-  socket: WebSocket;
-}
-let UserConnections: Connections[] = [];
+app.use(express.json());
+app.use(cors());
 
-wss.on('connection', (socket) => {
-  //   UserConnections.push(socket);
-  socket.on('message', (data: any) => {
-    try {
-      const ParsedData = JSON.parse(data); //data [type, payload] and payload has roomId
-      const type = ParsedData.type;
-      const roomID = ParsedData.payload.roomId;
+app.get('/api/hello', (req, res) => {
+  res.json({ message: 'Hello from Express!' });
+});
 
-      //join a room
-      if (type == 'join') {
-        UserConnections.push({ roomId: ParsedData.payload.roomId, socket });
-        // socket.send('You have joined Room: ' + roomID);
-      }
+const server = http.createServer(app);
 
-      //chat after joining a room
-      if (type == 'chat') {
-        const currentUserRoomID = UserConnections.find(
-          (x) => x.socket === socket
-        )?.roomId;
+// Setup WebSocket server using the same HTTP server
+setupWebsocket(server);
 
-        UserConnections.map((conn) => {
-          if (conn.roomId === currentUserRoomID) {
-            conn.socket.send(ParsedData.payload.message);
-          }
-        });
-      }
-    } catch (err) {
-      socket.send('Message format is incorrect');
-    }
-  });
-
-  //disconnect
-  socket.on('disconnect', () => {
-    UserConnections.filter((conn) => conn.socket != socket);
-  });
+server.listen(8000, () => {
+  console.log("Server running on http://localhost:8000");
 });
