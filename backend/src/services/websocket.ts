@@ -1,6 +1,8 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { Server as HTTPServer, Server } from "http";
+require('dotenv').config();
 import Redis from "ioredis";
+import { produceMessage } from "./kafka";
 
 const pub = new Redis({
   host: process.env.REDIS_HOST,
@@ -21,17 +23,15 @@ interface Connections {
   socket: WebSocket;
 }
 let UserConnections: Connections[] = [];
-sub.subscribe("CHAT");
+sub.subscribe("CHATS");
 
 export function setupWebsocket(server: Server) {
   const wss = new WebSocketServer({ server });
 
   wss.on("connection", (socket) => {
-    //   UserConnections.push(socket);
     socket.on("message", async (data: any) => {
       try {
         //send the message to redis
-        await pub.publish("CHATS", data);
 
         const ParsedData = JSON.parse(data); //data [type, payload] and payload has roomId
         const type = ParsedData.type;
@@ -45,15 +45,11 @@ export function setupWebsocket(server: Server) {
 
         //chat after joining a room
         if (type == "chat") {
-          const currentUserRoomID = UserConnections.find(
-            (x) => x.socket === socket
-          )?.roomId;
-
-          UserConnections.map((conn) => {
-            if (conn.roomId === currentUserRoomID) {
-              conn.socket.send(ParsedData.payload.message);
-            }
-          });
+          await pub.publish("CHATS", data);
+          //also send msg to Kafka or DB
+          //TODO => Also add userId and timestamp with this message
+          await produceMessage(data);
+          console.log('Message producer to kafka broker');
         }
       } catch (err) {
         socket.send("Message format is incorrect");
@@ -66,9 +62,28 @@ export function setupWebsocket(server: Server) {
     });
   });
 
-  sub.on("message", async (channel, message) => {
-    if(channel === 'CHATS'){
-        //send the message to all the people in current roomId
+  sub.on("message", async (channel, data) => {
+    if (channel === "CHATS") {
+      
+      try {
+        const ParsedData = JSON.parse(data); //[type, payload = {roomId, message}]
+        const type = ParsedData.type;
+        const roomID = ParsedData.payload.roomId;
+
+        if (type == "chat") {
+          // Send to all sockets on this server in the same roomId
+          UserConnections.forEach((conn) => {
+            if (
+              conn.roomId === roomID &&
+              conn.socket.readyState === WebSocket.OPEN
+            ) {
+              conn.socket.send(ParsedData.payload.message);
+            }
+          });
+        }
+      } catch (err) {
+        console.error("Error processing Redis message:", err);
+      }
     }
-  })
+  });
 }
