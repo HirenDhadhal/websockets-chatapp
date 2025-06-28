@@ -41,22 +41,40 @@ export async function startMessageConsumer() {
   await consumer.subscribe({ topic: "MESSAGES", fromBeginning: true });
 
   await consumer.run({
-    autoCommit: true,
-    eachMessage: async ({ message, pause }) => {
+    autoCommit: false,
+    eachMessage: async ({ topic, partition, message, heartbeat }) => {
       if (!message.value) return;
       console.log(`New Message Recv..`);
+
       try {
+        const data = JSON.parse(message.value!.toString());
+
         // await prismaClient.message.create({
         //   data: {
-        //     text: message.value?.toString(),
+        //     text: data.text,
+        //     roomId: data.roomId,
+        //     senderId: data.senderId,
         //   },
         // });
+
+        //only commit if DB is up
+        await consumer.commitOffsets([
+          {
+            topic,
+            partition,
+            offset: (Number(message.offset) + 1).toString(),
+          },
+        ]);
+
+        await heartbeat();
       } catch (err) {
-        console.log("Something is wrong");
-        pause();
+        console.error("Error saving message to DB:", err);
+
+        // pause the consumer temporarily
+        consumer.pause([{ topic }]);
         setTimeout(() => {
-          consumer.resume([{ topic: "MESSAGES" }]);
-        }, 60 * 1000);
+          consumer.resume([{ topic }]);
+        }, 15000);
       }
     },
   });

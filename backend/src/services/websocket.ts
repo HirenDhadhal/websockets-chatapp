@@ -1,6 +1,6 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { Server as HTTPServer, Server } from "http";
-require('dotenv').config();
+require("dotenv").config();
 import Redis from "ioredis";
 import { produceMessage } from "./kafka";
 
@@ -18,12 +18,44 @@ const sub = new Redis({
   password: process.env.REDIS_PASSWORD,
 });
 
+const redis = new Redis({
+  host: process.env.REDIS_HOST,
+  port: 13073,
+  username: "default",
+  password: process.env.REDIS_PASSWORD,
+});
+
 interface Connections {
   roomId: string;
   socket: WebSocket;
 }
+
+interface Message {
+  messageId: string;
+  chatId: string;
+  //TODO
+  // senderId: userID,
+  text: string;
+  timestamp: number;
+}
 let UserConnections: Connections[] = [];
 sub.subscribe("CHATS");
+
+export async function sendMessageToRedis(chatId: string, message: Message) {
+  const redisKey = `chat:recent:${chatId}`;
+  const messageJson = JSON.stringify(message);
+
+  try {
+    const pipeline = redis.pipeline();
+
+    pipeline.lpush(redisKey, messageJson);
+    pipeline.ltrim(redisKey, 0, 49);
+
+    await pipeline.exec();
+  } catch (err) {
+    console.error(`Failed to save recent message for chat ${chatId}:`, err);
+  }
+}
 
 export function setupWebsocket(server: Server) {
   const wss = new WebSocketServer({ server });
@@ -45,11 +77,24 @@ export function setupWebsocket(server: Server) {
 
         //chat after joining a room
         if (type == "chat") {
+          const chatId = ParsedData.payload.roomId;
           await pub.publish("CHATS", data);
           //also send msg to Kafka or DB
           //TODO => Also add userId and timestamp with this message
           await produceMessage(data);
-          console.log('Message producer to kafka broker');
+
+          //add this to redis
+          const newMessage = {
+            messageId: "msg_239823",
+            chatId,
+            //TODO
+            // senderId: userID,
+            text: ParsedData.payload.message,
+            timestamp: Date.now(),
+          };
+
+          await sendMessageToRedis(chatId, newMessage);
+          console.log("Message produced to Redis and kafka broker");
         }
       } catch (err) {
         socket.send("Message format is incorrect");
@@ -64,7 +109,6 @@ export function setupWebsocket(server: Server) {
 
   sub.on("message", async (channel, data) => {
     if (channel === "CHATS") {
-      
       try {
         const ParsedData = JSON.parse(data); //[type, payload = {roomId, message}]
         const type = ParsedData.type;
