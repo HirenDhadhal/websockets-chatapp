@@ -10,4 +10,20 @@ datasource db {
 model User {
   id Int @id @default(autoincrement())
   name String
+  email String @unique
+  password String
+}
+
+model ChatMessages {
+  id Int @id @default(autoincrement())
+  ChatId Int
+  text String
+  timestamp Int
+  userId Int
+}
+
+model ChatUserMapping {
+  id Int @id @default(autoincrement())
+  userId String
+  chatId Int
 }

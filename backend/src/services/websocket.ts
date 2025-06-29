@@ -3,6 +3,20 @@ import type { Server as HTTPServer, Server } from "http";
 require("dotenv").config();
 import Redis from "ioredis";
 import { produceMessage } from "./kafka";
+import { redisClient } from "./redis";
+
+interface Message {
+  chatId: number;
+  //TODO
+  // senderId: userID,
+  text: string;
+  timestamp: number;
+}
+
+interface Connections {
+  roomId: string;
+  socket: WebSocket;
+}
 
 const pub = new Redis({
   host: process.env.REDIS_HOST,
@@ -18,26 +32,6 @@ const sub = new Redis({
   password: process.env.REDIS_PASSWORD,
 });
 
-const redis = new Redis({
-  host: process.env.REDIS_HOST,
-  port: 13073,
-  username: "default",
-  password: process.env.REDIS_PASSWORD,
-});
-
-interface Connections {
-  roomId: string;
-  socket: WebSocket;
-}
-
-interface Message {
-  messageId: string;
-  chatId: string;
-  //TODO
-  // senderId: userID,
-  text: string;
-  timestamp: number;
-}
 let UserConnections: Connections[] = [];
 sub.subscribe("CHATS");
 
@@ -46,7 +40,7 @@ export async function sendMessageToRedis(chatId: string, message: Message) {
   const messageJson = JSON.stringify(message);
 
   try {
-    const pipeline = redis.pipeline();
+    const pipeline = redisClient.pipeline();
 
     pipeline.lpush(redisKey, messageJson);
     pipeline.ltrim(redisKey, 0, 49);
@@ -73,25 +67,26 @@ export function setupWebsocket(server: Server) {
         if (type == "join") {
           UserConnections.push({ roomId: ParsedData.payload.roomId, socket });
           // socket.send('You have joined Room: ' + roomID);
+          //TODO => Add this entry in ChatUserMapping table
         }
 
         //chat after joining a room
         if (type == "chat") {
           const chatId = ParsedData.payload.roomId;
           await pub.publish("CHATS", data);
-          //also send msg to Kafka or DB
-          //TODO => Also add userId and timestamp with this message
-          await produceMessage(data);
 
           //add this to redis
-          const newMessage = {
-            messageId: "msg_239823",
+          const newMessage: Message = {
             chatId,
             //TODO
             // senderId: userID,
             text: ParsedData.payload.message,
             timestamp: Date.now(),
           };
+
+          //also send msg to Kafka or DB
+          //TODO => Also add userId and timestamp with this message
+          await produceMessage(JSON.stringify(newMessage));
 
           await sendMessageToRedis(chatId, newMessage);
           console.log("Message produced to Redis and kafka broker");

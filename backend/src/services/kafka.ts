@@ -1,7 +1,16 @@
 import { Kafka, Producer } from "kafkajs";
 import fs from "fs";
 import path from "path";
+import prismaClient from '../db/db'
 require("dotenv").config();
+
+interface Message {
+  chatId: number;
+  //TODO
+  // senderId: userID,
+  text: string;
+  timestamp: number;
+}
 
 const kafka = new Kafka({
   brokers: [process.env.KAFKA_BROKER!],
@@ -47,15 +56,16 @@ export async function startMessageConsumer() {
       console.log(`New Message Recv..`);
 
       try {
-        const data = JSON.parse(message.value!.toString());
+        const data:Message = JSON.parse(message.value!.toString());
 
-        // await prismaClient.message.create({
-        //   data: {
-        //     text: data.text,
-        //     roomId: data.roomId,
-        //     senderId: data.senderId,
-        //   },
-        // });
+        await prismaClient.chatMessages.create({
+          data: {
+            text: data.text,
+            ChatId: data.chatId,
+            userId: 1,  //TODO => Update the userID
+            timestamp: data.timestamp
+          }
+        });
 
         //only commit if DB is up
         await consumer.commitOffsets([
@@ -70,7 +80,7 @@ export async function startMessageConsumer() {
       } catch (err) {
         console.error("Error saving message to DB:", err);
 
-        // pause the consumer temporarily
+        // pause the consumer and retry after 15min
         consumer.pause([{ topic }]);
         setTimeout(() => {
           consumer.resume([{ topic }]);
