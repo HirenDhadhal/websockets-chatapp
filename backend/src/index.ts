@@ -3,7 +3,7 @@ import session from "express-session";
 import cors from "cors";
 import http from "http";
 import { setupWebsocket } from "./services/websocket";
-import "./auth/auth";
+import "./auth/passport-auth";
 import passport from "passport";
 import dashboardRoutes from "./routes/dashboard/dashboard";
 import authRoutes from "./routes/auth/auth";

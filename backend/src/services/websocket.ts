@@ -62,12 +62,13 @@ export function setupWebsocket(server: Server) {
         const ParsedData = JSON.parse(data); //data [type, payload] and payload has roomId
         const type = ParsedData.type;
         const roomID = ParsedData.payload.roomId;
+        const email = ParsedData.payload.email;
 
         //join a room
         if (type == "join") {
           UserConnections.push({ roomId: ParsedData.payload.roomId, socket });
-          // socket.send('You have joined Room: ' + roomID);
-          //TODO => Add this entry in ChatUserMapping table
+          // Add this mapping to KAFKA and then to DB
+          //TODO => Add this entry in ChatUserMapping table [userEmail, RoomId]
         }
 
         //chat after joining a room
@@ -85,7 +86,7 @@ export function setupWebsocket(server: Server) {
           };
 
           //also send msg to Kafka or DB
-          //TODO => Also add userId and timestamp with this message
+          //TODO => Also add userId with this message
           await produceMessage(JSON.stringify(newMessage));
 
           await sendMessageToRedis(chatId, newMessage);

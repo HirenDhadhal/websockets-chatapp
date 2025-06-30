@@ -2,7 +2,7 @@ import express, { Request, Response, NextFunction } from "express";
 import passport from "passport";
 import prismaClient from "../../db/db";
 import bcrypt from "bcrypt";
-import "../../auth/auth";
+import "../../auth/passport-auth";
 
 const router = express.Router();
 

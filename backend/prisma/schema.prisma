@@ -24,6 +24,6 @@ model ChatMessages {
 
 model ChatUserMapping {
   id Int @id @default(autoincrement())
-  userId String
+  userEmail String
   chatId Int
 }
