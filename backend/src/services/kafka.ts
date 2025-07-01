@@ -1,15 +1,24 @@
 import { Kafka, Producer } from "kafkajs";
 import fs from "fs";
 import path from "path";
-import prismaClient from '../db/db'
+import prismaClient from "../db/db";
 require("dotenv").config();
 
-interface Message {
+interface ChatEvent {
+  type: "chat" | "join";
+  payload: any;
+}
+
+interface MessagePayload {
   chatId: number;
-  //TODO
-  // senderId: userID,
+  email: string;
   text: string;
-  timestamp: number;
+  timestamp: string;
+}
+
+interface JoinRoomPayload {
+  chatId: number;
+  userEmail: string;
 }
 
 const kafka = new Kafka({
@@ -38,7 +47,7 @@ export async function createProducer() {
 export async function produceMessage(message: string) {
   const producer = await createProducer();
   producer.send({
-    messages: [{ key: `message${Date.now()}`, value: message }],
+    messages: [{ key: `message:${Date.now()}`, value: message }],
     topic: "MESSAGES",
   });
 }
@@ -53,19 +62,40 @@ export async function startMessageConsumer() {
     autoCommit: false,
     eachMessage: async ({ topic, partition, message, heartbeat }) => {
       if (!message.value) return;
-      console.log(`New Message Recv..`);
 
       try {
-        const data:Message = JSON.parse(message.value!.toString());
+        const data: ChatEvent = JSON.parse(message.value!.toString());
 
-        await prismaClient.chatMessages.create({
-          data: {
-            text: data.text,
-            ChatId: data.chatId,
-            userId: 1,  //TODO => Update the userID
-            timestamp: data.timestamp
+        if (data.type == "join") {
+          const payload: JoinRoomPayload = data.payload;
+
+          try {
+            await prismaClient.chatUserMapping.create({
+            data: {
+              chatId: payload.chatId,
+              userEmail: payload.userEmail,
+            },
+          });
+          } catch (err) {
+            console.error('Error adding JOIN event in Database: ' + err);
           }
-        });
+        } else {
+          //Type = 'chat'
+          const payload: MessagePayload = data.payload;
+
+          try {            
+            await prismaClient.chatMessages.create({
+            data: {
+              text: payload.text,
+              ChatId: payload.chatId,
+              userEmail: payload.email,
+              sentAt: payload.timestamp,
+            },
+          });
+          } catch (err) {
+            console.error('Error adding CHAT event in Database: ' + err);
+          }
+        }
 
         //only commit if DB is up
         await consumer.commitOffsets([

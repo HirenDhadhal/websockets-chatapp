@@ -7,14 +7,13 @@ import { redisClient } from "./redis";
 
 interface Message {
   chatId: number;
-  //TODO
-  // senderId: userID,
+  email: string;
   text: string;
-  timestamp: number;
+  timestamp: string;
 }
 
 interface Connections {
-  roomId: string;
+  roomId: number;
   socket: WebSocket;
 }
 
@@ -35,7 +34,7 @@ const sub = new Redis({
 let UserConnections: Connections[] = [];
 sub.subscribe("CHATS");
 
-export async function sendMessageToRedis(chatId: string, message: Message) {
+export async function sendMessageToRedis(chatId: number, message: Message) {
   const redisKey = `chat:recent:${chatId}`;
   const messageJson = JSON.stringify(message);
 
@@ -47,7 +46,7 @@ export async function sendMessageToRedis(chatId: string, message: Message) {
 
     await pipeline.exec();
   } catch (err) {
-    console.error(`Failed to save recent message for chat ${chatId}:`, err);
+    console.error(`Failed to save recent message for chatId ${chatId}:`, err);
   }
 }
 
@@ -57,43 +56,54 @@ export function setupWebsocket(server: Server) {
   wss.on("connection", (socket) => {
     socket.on("message", async (data: any) => {
       try {
-        //send the message to redis
-
-        const ParsedData = JSON.parse(data); //data [type, payload] and payload has roomId
-        const type = ParsedData.type;
-        const roomID = ParsedData.payload.roomId;
-        const email = ParsedData.payload.email;
+        const ParsedData = JSON.parse(data);
+        const type: string = ParsedData.type;
+        const roomID: number = ParsedData.payload.roomId;
+        const email: string = ParsedData.payload.email;
 
         //join a room
-        if (type == "join") {
+        if (type === "join") {
           UserConnections.push({ roomId: ParsedData.payload.roomId, socket });
-          // Add this mapping to KAFKA and then to DB
-          //TODO => Add this entry in ChatUserMapping table [userEmail, RoomId]
-        }
 
-        //chat after joining a room
-        if (type == "chat") {
-          const chatId = ParsedData.payload.roomId;
+          // Add this User-RoomId mapping to KAFKA and then to DB
+          try {
+            await produceMessage(
+              JSON.stringify({
+                type: type,
+                payload: {
+                  chatId: roomID,
+                  userEmail: email,
+                },
+              })
+            );
+          } catch (err) {
+            console.error("failure in produce message: " + err);
+          }
+        } else if (type === "chat") {
+          //publish the message to Redis
           await pub.publish("CHATS", data);
 
-          //add this to redis
+          //IMP NOTE: Passing TimeStamp as String instead of BigInt
           const newMessage: Message = {
-            chatId,
-            //TODO
-            // senderId: userID,
+            chatId: roomID,
+            email: email,
             text: ParsedData.payload.message,
-            timestamp: Date.now(),
+            timestamp: Date.now().toString(),
           };
 
           //also send msg to Kafka or DB
-          //TODO => Also add userId with this message
-          await produceMessage(JSON.stringify(newMessage));
+          await produceMessage(
+            JSON.stringify({
+              type: type,
+              payload: newMessage,
+            })
+          );
 
-          await sendMessageToRedis(chatId, newMessage);
-          console.log("Message produced to Redis and kafka broker");
+          //storing the last 50 meesages for each chatId
+          await sendMessageToRedis(roomID, newMessage);
         }
       } catch (err) {
-        socket.send("Message format is incorrect");
+        socket.send("Error in processing the message to Redis/Kafka");
       }
     });
 
@@ -107,11 +117,12 @@ export function setupWebsocket(server: Server) {
     if (channel === "CHATS") {
       try {
         const ParsedData = JSON.parse(data); //[type, payload = {roomId, message}]
-        const type = ParsedData.type;
-        const roomID = ParsedData.payload.roomId;
+        const type: string = ParsedData.type;
+        const roomID: number = ParsedData.payload.roomId;
+        const email: string = ParsedData.payload.email;
 
         if (type == "chat") {
-          // Send to all sockets on this server in the same roomId
+          // Find all sockets for on this server in the same roomId and send message to them
           UserConnections.forEach((conn) => {
             if (
               conn.roomId === roomID &&

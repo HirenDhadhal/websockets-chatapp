@@ -7,6 +7,7 @@ import "./auth/passport-auth";
 import passport from "passport";
 import dashboardRoutes from "./routes/dashboard/dashboard";
 import authRoutes from "./routes/auth/auth";
+import {startMessageConsumer} from "./services/kafka"
 
 const app = express();
 
@@ -42,6 +43,7 @@ const server = http.createServer(app);
 
 // WebSocket server on the same HTTP server
 setupWebsocket(server);
+startMessageConsumer();
 
 server.listen(8000, () => {
   console.log("Server running on port 8000");

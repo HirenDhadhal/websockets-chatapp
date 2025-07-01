@@ -18,8 +18,8 @@ model ChatMessages {
   id Int @id @default(autoincrement())
   ChatId Int
   text String
-  timestamp Int
-  userId Int
+  sentAt String
+  userEmail String
 }
 
 model ChatUserMapping {
