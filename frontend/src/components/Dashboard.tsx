@@ -23,21 +23,6 @@ const Dashboard = () => {
       });
   }, []);
 
-  //TODO => Remove after testing
-  // useEffect(() => {
-  //   axios
-  //     .post(`${BACKEND_URL}/api/dashboard/roomids-per-user`, {
-  //       withCredentials: true,
-  //     })
-  //     .then((res) => {
-  //       setRoomids(res.data.roomIds);
-  //       console.log(res.data.roomIds);
-  //     })
-  //     .catch((err) => {
-  //       console.log("Error getting all the roomIds for user: " + err);
-  //     });
-  // }, []);
-
   const ws = new WebSocket("ws://localhost:8000");
   useEffect(() => {
     if (!user) return;
@@ -69,7 +54,7 @@ const Dashboard = () => {
         withCredentials: true,
       })
       .then((res) => {
-        setRoomids(res.data);
+        // setRoomids(res.data);
         console.log(res.data);
       })
       .catch((err) => {
