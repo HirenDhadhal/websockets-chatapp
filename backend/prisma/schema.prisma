@@ -26,4 +26,5 @@ model ChatUserMapping {
   id Int @id @default(autoincrement())
   userEmail String
   chatId Int
+  @@unique([userEmail, chatId])
 }

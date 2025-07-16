@@ -53,7 +53,7 @@ export async function produceMessage(message: string) {
 }
 
 export async function startMessageConsumer() {
-  console.log("Consumer is running..");
+  console.log("Kafka Consumer is running..");
   const consumer = kafka.consumer({ groupId: "default" });
   await consumer.connect();
   await consumer.subscribe({ topic: "MESSAGES", fromBeginning: true });
@@ -70,12 +70,17 @@ export async function startMessageConsumer() {
           const payload: JoinRoomPayload = data.payload;
 
           try {
-            await prismaClient.chatUserMapping.create({
-            data: {
-              chatId: payload.chatId,
-              userEmail: payload.userEmail,
-            },
-          });
+          //   await prismaClient.chatUserMapping.create({
+          //   data: {
+          //     chatId: payload.chatId,
+          //     userEmail: payload.userEmail,
+          //   },
+          // });
+          await prismaClient.$executeRaw`
+          INSERT INTO "ChatUserMapping" ("userEmail", "chatId")
+          VALUES (${payload.userEmail}, ${payload.chatId})
+          ON CONFLICT ("userEmail", "chatId") DO NOTHING`;
+          
           } catch (err) {
             console.error('Error adding JOIN event in Database: ' + err);
           }

@@ -1,5 +1,5 @@
 import { WebSocketServer, WebSocket } from "ws";
-import type { Server as HTTPServer, Server } from "http";
+import type { Server } from "http";
 require("dotenv").config();
 import Redis from "ioredis";
 import { produceMessage } from "./kafka";
@@ -15,6 +15,7 @@ interface Message {
 interface Connections {
   roomId: number;
   socket: WebSocket;
+  email: string;
 }
 
 const pub = new Redis({
@@ -63,7 +64,7 @@ export function setupWebsocket(server: Server) {
 
         //join a room
         if (type === "join") {
-          UserConnections.push({ roomId: ParsedData.payload.roomId, socket });
+          UserConnections.push({ roomId: ParsedData.payload.roomId, socket, email });
 
           // Add this User-RoomId mapping to KAFKA and then to DB
           try {
@@ -104,6 +105,7 @@ export function setupWebsocket(server: Server) {
         }
       } catch (err) {
         socket.send("Error in processing the message to Redis/Kafka");
+        console.error("Error in processing the message to Redis/Kafka");
       }
     });
 

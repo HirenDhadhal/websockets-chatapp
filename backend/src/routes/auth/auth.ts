@@ -10,6 +10,15 @@ function isLoggedIn(req: Request, res: Response, next: NextFunction) {
   req.user ? next() : res.sendStatus(401);
 }
 
+router.get("/status", (req, res) => {  
+  if (req.user) {
+    res.send({ user: req.user });
+  } else {
+    res.status(401).send({ user: null });
+  }
+});
+
+
 //Google Login
 router.get(
   "/google",

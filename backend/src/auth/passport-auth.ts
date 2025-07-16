@@ -1,10 +1,10 @@
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
-import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcrypt";
 import prismaClient from "../db/db";
 
 require("dotenv").config();
+const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
 
 var GoogleStrategy = require("passport-google-oauth20").Strategy;
 
@@ -36,34 +36,28 @@ passport.use(
     {
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: "http://localhost:8000/google/callback",
+      callbackURL: `${BACKEND_URL}/google/callback`,
     },
 
     // @ts-ignore
     async (accessToken, refreshToken, profile, done) => {
-      
       try {
-        let user = await prismaClient.user.findFirst({
-          where: { email: profile.emails[0].value },
+        let user = await prismaClient.user.upsert({
+          create: {
+            email: profile.emails[0].value,
+            name: profile.displayName,
+            password: "",
+          },
+          update: {
+            name: profile.displayName,
+          },
+          where: {
+            email: profile.emails[0].value,
+          },
         });
 
-        if (!user && profile.emails && profile.emails.length) {
-          user = await prismaClient.user.findFirst({
-            where: { email: profile.emails[0].value },
-          });
-        }
-
-        if (!user) {
-          user = await prismaClient.user.create({
-            data: {
-              name: profile.displayName,
-              email: profile.emails?.[0]?.value ?? "",
-              password: "",
-            },
-          });
-        }
-
-        return done(null, user);
+        console.log(user);
+        done(null, user);
       } catch (err) {
         return done(err as Error);
       }
