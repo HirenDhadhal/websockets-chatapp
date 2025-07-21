@@ -88,10 +88,41 @@ router.get("/roomids-per-user", async (req, res) => {
     const messages = await getMessagesForChat(roomIds);
     //TODO => Store them in Redis if not already present [check before inserting]
 
-    res.send(messages);
+    res.status(200).json(messages);
   } catch (err) {
-    res.status(500).send("Internal server error");
+    res.status(500).json({error: "Internal server error"});
     console.error(`Failed to return roomIds: `, err);
+  }
+});
+
+router.post("/create-new-chat", async (req, res) => {
+  const userEmails: string[] = req.body.emails;
+
+  try {
+    const data = await prismaClient.chatUserMapping.findFirst({
+      select: { chatId: true },
+      orderBy: { chatId: "desc" },
+    });
+
+    const maxRoomId = data?.chatId;
+    const newChatId = (maxRoomId ? maxRoomId : 1) + 1;
+
+    // Keep all entries in single transaction [all users assigned a room or none]
+    const operations = userEmails.map((email) =>
+      prismaClient.chatUserMapping.create({
+        data: {
+          userEmail: email,
+          chatId: newChatId,
+        },
+      })
+    );
+
+    await prismaClient.$transaction(operations);
+
+    res.status(200).json({ chatId: newChatId });
+  } catch (err) {
+    console.error("Error creating new chat:", err);
+    res.status(500).json({ error: "Failed to create chat" });
   }
 });
 

@@ -5,7 +5,7 @@ import prismaClient from "../db/db";
 require("dotenv").config();
 
 interface ChatEvent {
-  type: "chat" | "join";
+  type: "chat" | "join" | "asktojoin";
   payload: any;
 }
 
@@ -66,39 +66,34 @@ export async function startMessageConsumer() {
       try {
         const data: ChatEvent = JSON.parse(message.value!.toString());
 
-        if (data.type == "join") {
+        if (data.type === "join") {
           const payload: JoinRoomPayload = data.payload;
 
           try {
-          //   await prismaClient.chatUserMapping.create({
-          //   data: {
-          //     chatId: payload.chatId,
-          //     userEmail: payload.userEmail,
-          //   },
-          // });
-          await prismaClient.$executeRaw`
+            //Only add the entry in DB if it is not already present
+            await prismaClient.$executeRaw`
           INSERT INTO "ChatUserMapping" ("userEmail", "chatId")
           VALUES (${payload.userEmail}, ${payload.chatId})
           ON CONFLICT ("userEmail", "chatId") DO NOTHING`;
-          
           } catch (err) {
-            console.error('Error adding JOIN event in Database: ' + err);
+            console.error("Error adding JOIN event in Database: " + err);
           }
-        } else {
-          //Type = 'chat'
+        } else if (data.type === "asktojoin") {
+          //TODO
+        } else if (data.type === "chat"){
           const payload: MessagePayload = data.payload;
 
-          try {            
+          try {
             await prismaClient.chatMessages.create({
-            data: {
-              text: payload.text,
-              ChatId: payload.chatId,
-              userEmail: payload.email,
-              sentAt: payload.timestamp,
-            },
-          });
+              data: {
+                text: payload.text,
+                ChatId: payload.chatId,
+                userEmail: payload.email,
+                sentAt: payload.timestamp,
+              },
+            });
           } catch (err) {
-            console.error('Error adding CHAT event in Database: ' + err);
+            console.error("Error adding CHAT event in Database: " + err);
           }
         }
 

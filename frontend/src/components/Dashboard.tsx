@@ -25,6 +25,7 @@ const Dashboard = () => {
 
   const ws = new WebSocket("ws://localhost:8000");
   useEffect(() => {
+    //TODO -> Redirect the user to Login page and clear cookies if any
     if (!user) return;
 
     ws.onopen = () => {
@@ -42,20 +43,20 @@ const Dashboard = () => {
 
     ws.onmessage = (event) => {
       try {
-        console.log('Data printed here: ' + event.data);
+        console.log("Data printed here: " + event.data);
       } catch (err) {
         console.error("Failed to receive message: ", err);
       }
     };
 
-    console.log('logging the user before request: ' + user);
+    console.log("logging the user before request: " + user);
     axios
       .get(`${BACKEND_URL}/api/dashboard/roomids-per-user`, {
         withCredentials: true,
       })
       .then((res) => {
-        // setRoomids(res.data);
-        console.log(res.data);
+        setRoomids(res.data);
+        console.log("RoomIds joined by current user" + res.data);
       })
       .catch((err) => {
         console.log("Error getting all the roomIds for user: " + err);
@@ -74,11 +75,46 @@ const Dashboard = () => {
           message: text,
           //@ts-ignore
           email: user.email,
-          roomId: 123,
+          roomId: 123, //TODO => Remove this hardcoding
         },
       })
     );
     console.log("msg sent to backend socket");
+  }
+
+  function createNewRoom() {
+    //send request to Backend route with all Emails to be added to new room
+    //Receive new RoomId as JSON
+    let userEmails: string[] = ['abcd1234@gmail.com'];
+
+    const newRoomId = axios
+      .post(
+        `${BACKEND_URL}/api/dashboard/create-new-chat`,
+        { emails: userEmails },
+        {
+          withCredentials: true,
+        }
+      )
+      .then((res) => {
+        let roomId = res.data;
+        console.log('Received roomid is: ' + roomId);
+      })
+      .catch((err) => console.log(err));
+
+    //WS-Send JOIN event for current user
+    // ws.send(
+    //   JSON.stringify({
+    //     type: "join",
+    //     payload: {
+    //       roomId: newRoomId,
+    //       //@ts-ignore
+    //       email: user.email,
+    //     },
+    //   })
+    // );
+
+    //WS-Send "AskToJoin" event for others
+    //Update the state for current user as a new room was joined
   }
 
   //1. Fetch all RoomId/chatIds from DB for current user
@@ -119,6 +155,9 @@ const Dashboard = () => {
         {msgs.map((msg) => (
           <div className="bg-white text-black rounded p-4">{msg}</div>
         ))}
+      </div>
+      <div>
+        <button onClick={() => createNewRoom()}>Create New Room</button>
       </div>
       <div className="w-full bg-white flex">
         <input ref={inputRef} className="flex-1 p-4"></input>
