@@ -15,8 +15,6 @@ interface User {
   password: string;
 }
 
-type ChatMessagesMap = Record<number, Message[]>;
-
 const router = express.Router();
 
 export async function getMessagesForChat(
@@ -70,6 +68,20 @@ export async function getMessagesForChat(
   }
 }
 
+export async function addUsersToChat(chatId: number, userEmails: string[]) {
+  // Keep all entries in single transaction [all users assigned a room or none]
+  const operations = userEmails.map((email) =>
+    prismaClient.chatUserMapping.create({
+      data: {
+        userEmail: email,
+        chatId: chatId,
+      },
+    })
+  );
+
+  await prismaClient.$transaction(operations);
+}
+
 router.get("/roomids-per-user", async (req, res) => {
   //fetch all the chatIds for logged in User from DB
   try {
@@ -88,7 +100,7 @@ router.get("/roomids-per-user", async (req, res) => {
     const messages = await getMessagesForChat(roomIds);
     //TODO => Store them in Redis if not already present [check before inserting]
 
-    res.status(200).json(messages);
+    res.status(200).json(roomIds);
   } catch (err) {
     res.status(500).json({error: "Internal server error"});
     console.error(`Failed to return roomIds: `, err);
@@ -98,6 +110,9 @@ router.get("/roomids-per-user", async (req, res) => {
 router.post("/create-new-chat", async (req, res) => {
   const userEmails: string[] = req.body.emails;
 
+  console.log('User Email received in backend for new chat:');
+  console.log(userEmails);
+
   try {
     const data = await prismaClient.chatUserMapping.findFirst({
       select: { chatId: true },
@@ -106,24 +121,31 @@ router.post("/create-new-chat", async (req, res) => {
 
     const maxRoomId = data?.chatId;
     const newChatId = (maxRoomId ? maxRoomId : 1) + 1;
+    
 
-    // Keep all entries in single transaction [all users assigned a room or none]
-    const operations = userEmails.map((email) =>
-      prismaClient.chatUserMapping.create({
-        data: {
-          userEmail: email,
-          chatId: newChatId,
-        },
-      })
-    );
-
-    await prismaClient.$transaction(operations);
-
+    //Add user-RoomId mapping to DB
+    await addUsersToChat(newChatId, userEmails);
+    
     res.status(200).json({ chatId: newChatId });
   } catch (err) {
-    console.error("Error creating new chat:", err);
+    console.error("Error creating new chat or adding users in Chat:", err);
     res.status(500).json({ error: "Failed to create chat" });
   }
 });
+
+
+router.post('/add-new-users', async (req, res) => {
+  const chatId = req.body.chatId;
+  const userEmails: string[] = req.body.userEmails;
+
+  try {
+    await addUsersToChat(chatId, userEmails);
+
+    res.status(200).json({ message: "Successfully added users to chat"});
+  } catch (err) {
+    console.error(`Error adding new user to ChatId-${chatId}: ` + err);
+    res.status(500).json({ error: "Failed to add users to chat" });
+  }
+})
 
 export default router;

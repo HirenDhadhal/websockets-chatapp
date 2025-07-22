@@ -80,36 +80,25 @@ export function setupWebsocket(server: Server) {
           } catch (err) {
             console.error("failure in produce message: " + err);
           }
-        }
-        else if (type === "asktojoin"){
-          //find the socket associated to userEmail [if present]
-          //push new entry for that socket to roomId & email mapping into UserConnections
-          for(const connection of UserConnections){
-            if(connection.email === email){
-              UserConnections.push({roomId: roomID, socket: connection.socket, email});
+        } else if (type === "asktojoin") {
+          //find the socket associated to userEmail, if present add entry in UserConnections
+          //no need to push this mapping to Kafka & DB [already done in route]
+          for (const connection of UserConnections) {
+            if (connection.email === email) {
+              UserConnections.push({
+                roomId: roomID,
+                socket: connection.socket,
+                email,
+              });
             }
           }
-
-          //push this User-RoomId mapping to Kafka and DB
-          try {
-            await produceMessage(
-              JSON.stringify({
-                type: type,
-                payload: {
-                  chatId: roomID,
-                  userEmail: email,
-                },
-              })
-            );
-          } catch (err) {
-            console.error("failure in produce message: " + err);
-          }
-        }
-         else if (type === "chat") {
+        } else if (type === "rejoin") {
+          UserConnections.push({ roomId: roomID, socket, email });
+        } else if (type === "chat") {
           //publish the message to Redis
           await pub.publish("CHATS", data);
 
-          //IMP NOTE: Passing TimeStamp as String instead of BigInt
+          //Passing TimeStamp as String instead of BigInt
           const newMessage: Message = {
             chatId: roomID,
             email: email,

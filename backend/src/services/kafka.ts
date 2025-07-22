@@ -68,19 +68,20 @@ export async function startMessageConsumer() {
 
         if (data.type === "join") {
           const payload: JoinRoomPayload = data.payload;
+          const userEmail = payload.userEmail;
+          const chatId = payload.chatId;
 
           try {
             //Only add the entry in DB if it is not already present
             await prismaClient.$executeRaw`
-          INSERT INTO "ChatUserMapping" ("userEmail", "chatId")
-          VALUES (${payload.userEmail}, ${payload.chatId})
-          ON CONFLICT ("userEmail", "chatId") DO NOTHING`;
+            INSERT INTO "ChatUserMapping" ("userEmail", "chatId")
+            VALUES (${userEmail}, ${chatId})
+            ON CONFLICT ("userEmail", "chatId") DO NOTHING
+          `;
           } catch (err) {
             console.error("Error adding JOIN event in Database: " + err);
           }
-        } else if (data.type === "asktojoin") {
-          //TODO
-        } else if (data.type === "chat"){
+        } else if (data.type === "chat") {
           const payload: MessagePayload = data.payload;
 
           try {
