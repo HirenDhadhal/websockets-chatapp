@@ -12,6 +12,7 @@ function isLoggedIn(req: Request, res: Response, next: NextFunction) {
 
 router.get("/status", (req, res) => {  
   if (req.user) {
+    //TODO => Only send {email, name, userId}
     res.send({ user: req.user });
   } else {
     res.status(401).send({ user: null });

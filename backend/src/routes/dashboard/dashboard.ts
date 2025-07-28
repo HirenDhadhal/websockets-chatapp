@@ -5,7 +5,7 @@ import prismaClient from "../../db/db";
 interface Message {
   email: string;
   text: string;
-  // timestamp: number;
+  timestamp: string;
 }
 
 interface User {
@@ -25,7 +25,7 @@ export async function getMessagesForChat(
   try {
     for (const chatid of chatIdsArray) {
       const redisKey = `chat:recent:${chatid}`;
-      const messageStrings = await redisClient.lrange(redisKey, 0, 49);
+      const messageStrings = await redisClient.lrange(redisKey, 0, 30);
 
       let messages: Message[] = messageStrings
         .map((msg) => {
@@ -33,7 +33,9 @@ export async function getMessagesForChat(
             const parsedData = JSON.parse(msg);
             const email = parsedData.payload.email;
             const text = parsedData.payload.message;
-            return { email, text };
+            const timestamp = parsedData.payload.timestamp;
+
+            return { email, text, timestamp };
           } catch {
             return null;
           }
@@ -50,12 +52,18 @@ export async function getMessagesForChat(
         messages = messageData
           .map((msg) => {
             try {
-              return { email: msg.userEmail, text: msg.text };
+              return {
+                email: msg.userEmail,
+                text: msg.text,
+                timestamp: msg.sentAt,
+              };
             } catch {
               return null;
             }
           })
           .filter(Boolean) as Message[];
+
+        //TODO => Store them in Redis if not already present [check before inserting]
       }
 
       result[chatid] = messages;
@@ -98,19 +106,49 @@ router.get("/roomids-per-user", async (req, res) => {
     const roomIds: number[] = chatsData.map((chat) => chat.chatId);
 
     const messages = await getMessagesForChat(roomIds);
-    //TODO => Store them in Redis if not already present [check before inserting]
 
-    res.status(200).json(roomIds);
+    res.status(200).json({roomIds, messages});
   } catch (err) {
-    res.status(500).json({error: "Internal server error"});
+    res.status(500).json({ error: "Internal server error" });
     console.error(`Failed to return roomIds: `, err);
+  }
+});
+
+router.get("/:chatid/messages/before/:timestamp", async (req, res) => {
+  const chatId: number = parseInt(req.params.chatid);
+  const timestamp = req.params.timestamp;
+
+  try {
+    const olderChatMessages = await prismaClient.chatMessages.findMany({
+      where: {
+        ChatId: chatId,
+        sentAt: {
+          lt: timestamp,
+        },
+      },
+      orderBy: {
+        sentAt: "desc",
+      },
+      select: {
+        text: true,
+        sentAt: true,
+        userEmail: true,
+        //TODO: Add UserName as well
+      },
+      take: 30,
+    });
+
+    res.status(200).json(olderChatMessages);
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+    console.error(`Failed to fetch older Messages for roomId: `, err);
   }
 });
 
 router.post("/create-new-chat", async (req, res) => {
   const userEmails: string[] = req.body.emails;
 
-  console.log('User Email received in backend for new chat:');
+  console.log("User Email received in backend for new chat:");
   console.log(userEmails);
 
   try {
@@ -121,11 +159,10 @@ router.post("/create-new-chat", async (req, res) => {
 
     const maxRoomId = data?.chatId;
     const newChatId = (maxRoomId ? maxRoomId : 1) + 1;
-    
 
     //Add user-RoomId mapping to DB
     await addUsersToChat(newChatId, userEmails);
-    
+
     res.status(200).json({ chatId: newChatId });
   } catch (err) {
     console.error("Error creating new chat or adding users in Chat:", err);
@@ -133,19 +170,18 @@ router.post("/create-new-chat", async (req, res) => {
   }
 });
 
-
-router.post('/add-new-users', async (req, res) => {
+router.post("/add-new-users", async (req, res) => {
   const chatId = req.body.chatId;
   const userEmails: string[] = req.body.userEmails;
 
   try {
     await addUsersToChat(chatId, userEmails);
 
-    res.status(200).json({ message: "Successfully added users to chat"});
+    res.status(200).json({ message: "Successfully added users to chat" });
   } catch (err) {
     console.error(`Error adding new user to ChatId-${chatId}: ` + err);
     res.status(500).json({ error: "Failed to add users to chat" });
   }
-})
+});
 
 export default router;

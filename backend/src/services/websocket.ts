@@ -95,9 +95,6 @@ export function setupWebsocket(server: Server) {
         } else if (type === "rejoin") {
           UserConnections.push({ roomId: roomID, socket, email });
         } else if (type === "chat") {
-          //publish the message to Redis
-          await pub.publish("CHATS", data);
-
           //Passing TimeStamp as String instead of BigInt
           const newMessage: Message = {
             chatId: roomID,
@@ -105,6 +102,9 @@ export function setupWebsocket(server: Server) {
             text: ParsedData.payload.message,
             timestamp: Date.now().toString(),
           };
+
+          //publish the message to Redis
+          await pub.publish("CHATS", data);
 
           //also send msg to Kafka or DB
           await produceMessage(
@@ -132,10 +132,11 @@ export function setupWebsocket(server: Server) {
   sub.on("message", async (channel, data) => {
     if (channel === "CHATS") {
       try {
-        const ParsedData = JSON.parse(data); //[type, payload = {roomId, message}]
+        const ParsedData = JSON.parse(data); //[type, payload = {roomId, email, message}]
         const type: string = ParsedData.type;
         const roomID: number = ParsedData.payload.roomId;
         const email: string = ParsedData.payload.email;
+        const timestamp = Date.now().toString();
 
         if (type == "chat") {
           // Find all sockets for on this server in the same roomId and send message to them
@@ -144,7 +145,8 @@ export function setupWebsocket(server: Server) {
               conn.roomId === roomID &&
               conn.socket.readyState === WebSocket.OPEN
             ) {
-              conn.socket.send(ParsedData.payload.message);
+              const messageToSend = JSON.stringify({message: ParsedData.payload.message, email, chatId: roomID, timestamp})
+              conn.socket.send(messageToSend);
             }
           });
         }
