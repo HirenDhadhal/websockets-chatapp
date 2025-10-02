@@ -47,9 +47,11 @@ passport.use(
             email: profile.emails[0].value,
             name: profile.displayName,
             password: "",
+            image: profile.photos?.[0]?.value ?? null,
           },
           update: {
             name: profile.displayName,
+            image: profile.photos?.[0]?.value ?? null,
           },
           where: {
             email: profile.emails[0].value,

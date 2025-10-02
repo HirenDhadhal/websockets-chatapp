@@ -1,35 +1,39 @@
 import axios from "axios";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { BACKEND_URL } from "../constants";
-import { useChatState } from "../hooks/useChatState";
-
-interface Message {
-  email: string;
-  text: string;
-  timestamp: string;
-}
-
-interface newMessageFromWS {
-  message: string;
-  email: string;
-  chatId: number;
-  timestamp: string;
-}
+// import Header from "./Header";
+// import Sidebar from "./Sidebar";
+// import ChatList from "./ChatList";
+// import ActiveChat from "./ActiveChat";
+// import { chats, messages, Chat } from "./data";
+import { useSocket } from "../hooks/useSocket";
+import { useChatStore } from "../store/chatStore";
+import ActiveChat from "./ActiveChat";
+import ChatList from "./ChatList";
+import Sidebar from "./Sidebar";
+import Header from "./Header";
+import { GroupChat, Message, newMessageFromWS } from "../types/types";
+import NewChat from "./NewChat";
 
 const Dashboard = () => {
-  const [msgs, setMsgs] = useState<string[]>(["hi there"]);
-  const [roomids, setRoomids] = useState<number[]>([]);
-  const [user, setUser] = useState(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [activeChatId, setActiveChatId] = useState(null);
-  const [isLoadingChats, setIsLoadingChats] = useState(false); //{true, false}
-  const [isLoadingOlderChats, setIsLoadingOlderChats] = useState(false); //{true, false}
-  const [allMessages, setAllMessages] = useState<Record<string, Message[]>>({});
-  const [allChatsOrder, setAllChatsOrder] = useState<number[]>([]);
-  const [chatIdToTimestampMapping, setChatIdToTimestampMapping] = useState<
-    [number, string][]
-  >([]);
-  const wsRef = useRef<WebSocket>(null);
+  const allMessages = useChatStore((state) => state.allMessages);
+  const currentUser = useChatStore((state) => state.currentUser);
+  const activeChatId = useChatStore((state) => state.activeChatId);
+  const selectedUsers = useChatStore((state) => state.selectedUsers);
+
+  const setAllMessages = useChatStore.getState().setAllMessages;
+  const setAllChatsOrder = useChatStore.getState().setAllChatsOrder;
+  const setIsLoadingChats = useChatStore.getState().setIsLoadingChats;
+  const setActiveChatId = useChatStore.getState().setActiveChatId;
+  const setAllUsersMapping = useChatStore.getState().setAllUsersMapping;
+  const setCurrentUser = useChatStore.getState().setCurrentUser;
+  const setChatDetailsMap = useChatStore.getState().setChatDetailsMap;
+  const setSelectedUsers = useChatStore.getState().setSelectedUsers;
+  const setChatIdUserMapping = useChatStore.getState().setChatIdUserMapping;
+  const setChatIdToTimestampMapping =
+    useChatStore.getState().setChatIdToTimestampMapping;
+
+  const socket = useSocket();
 
   useEffect(() => {
     axios
@@ -37,22 +41,34 @@ const Dashboard = () => {
         withCredentials: true,
       })
       .then((res) => {
-        setUser(res.data.user);
-        console.log(res.data.user);
+        const newUser = {
+          id: res.data.user.id,
+          name: res.data.user.name,
+          email: res.data.user.email,
+          image: res.data.user.image,
+        };
+        setCurrentUser(newUser);
+        // setUser(newUser);
       })
       .catch((err) => {
-        console.log("Not authenticated:");
+        console.log("Not authenticated: " + err);
       });
   }, []);
 
-  const ws = new WebSocket("ws://localhost:8000");
   useEffect(() => {
     //TODO -> Redirect the user to Login page and clear cookies if any
-    if (!user) return;
+    // if (!user || !socket) return;
+    // if (!currentUser) {
+    //   window.location.href = '/login';
+    //   return;
+    // }
 
-    ws.onmessage = (event) => {
+    if(!socket || !currentUser){
+      return;
+    }
+
+    socket.onmessage = (event) => {
       try {
-        //Type = JSON {message, email, chatId, timestamp}
         const newMessageData: newMessageFromWS = JSON.parse(event.data);
         const { message, email, chatId, timestamp } = newMessageData;
 
@@ -62,32 +78,41 @@ const Dashboard = () => {
           timestamp,
         };
 
-        setAllMessages((prev) => {
-          const existingMessages = prev[chatId] || [];
-          return {
-            ...prev,
-            [chatId]: [newMessage, ...existingMessages],
+        useChatStore.setState((state) => {
+          const chatIdNum = Number(chatId);
+          const chatIdStr = String(chatId);
+
+          const updatedMessages = {
+            ...state.allMessages,
+            [chatIdStr]: [...(state.allMessages[chatIdStr] || []), newMessage],
           };
-        });
 
-        setChatIdToTimestampMapping((prev) => {
-          const filtered = prev.filter(([id]) => id !== chatId);
+          const filtered = state.chatIdToTimestampMapping.filter(
+            ([id]) => id !== chatIdNum
+          );
 
-          // Add new updated entry
-          const updated: [number, string][] = [
-            [chatId, timestamp],
+          const updatedMapping: [number, string][] = [
+            [chatIdNum, timestamp],
             ...filtered,
           ];
+          updatedMapping.sort((a, b) => Number(b[1]) - Number(a[1]));
 
-          // Sort by timestamp DESCENDING
-          updated.sort((a, b) => Number(b[1]) - Number(a[1]));
+          const sortedChatIds = updatedMapping.map(([id]) => id);
 
-          //Sort the final ChatIds list
-          const sortedChatIds = updated.map(([chatId]) => chatId);
-
-          setAllChatsOrder(sortedChatIds);
-
-          return updated;
+          if (!state.allMessages[chatIdStr]) {
+            return {
+              allMessages: updatedMessages,
+              chatIdToTimestampMapping: updatedMapping,
+              allChatsOrder: sortedChatIds,
+              activeChatId: chatIdNum,
+            };
+          } else {
+            return {
+              allMessages: updatedMessages,
+              chatIdToTimestampMapping: updatedMapping,
+              allChatsOrder: sortedChatIds,
+            };
+          }
         });
       } catch (err) {
         console.error("Failed to receive message: ", err);
@@ -100,15 +125,44 @@ const Dashboard = () => {
         withCredentials: true,
       })
       .then((res) => {
-        const { roomIds, messages } = res.data;
-        setRoomids(roomIds);
-        //messages = {email, text, timestamp}
-        setAllMessages(messages);
+        const {
+          roomIds,
+          messages,
+          allUsersMapping,
+          groupChatData,
+          usersPerRoom,
+        } = res.data as {
+          roomIds: number[];
+          messages: Record<string, Message[]>;
+          allUsersMapping: Record<
+            string,
+            { id: number; name: string; email: string; image: string }
+          >;
+          groupChatData: GroupChat[];
+          usersPerRoom: Record<number, string[]>;
+        };
 
-        //TODO => update allChatOrder as per the timestamp of latestMsgReceived
+        setAllMessages(messages);
+        setAllUsersMapping(allUsersMapping);
+        setChatIdUserMapping(usersPerRoom);
+
+        const chatDetailsMap = groupChatData.reduce<Record<number, GroupChat>>(
+          (acc, chat) => {
+            acc[chat.chatId] = chat;
+            return acc;
+          },
+          {}
+        );
+
+        setChatDetailsMap(chatDetailsMap);
+
         const ChatIdToTimestampMapping: [number, string][] = roomIds.map(
           (chatId: number) => {
-            return [chatId, messages[chatId]?.[0]?.timestamp || "0"];
+            let length = 1;
+            if(messages[chatId]){
+              length = messages[chatId].length;
+            }
+            return [chatId, messages[chatId]?.[length-1]?.timestamp || "0"];
           }
         );
 
@@ -118,17 +172,18 @@ const Dashboard = () => {
         const sortedChatIds = ChatIdToTimestampMapping.map(
           ([chatId]) => chatId
         );
+        
         setAllChatsOrder(sortedChatIds);
 
         //Re-SUBSCRIBE TO THESE RoomIds
         for (const roomId of roomIds) {
-          ws.send(
+          socket!.send(
             JSON.stringify({
               type: "rejoin",
               payload: {
                 roomId: roomId,
                 //@ts-ignore
-                email: user.email,
+                email: currentUser.email,
               },
             })
           );
@@ -140,127 +195,87 @@ const Dashboard = () => {
       .finally(() => {
         setIsLoadingChats(false);
       });
-  }, [user]);
+  }, [currentUser]);
 
-  function sendMessageToSocket(text: string | undefined, roomId: number) {
-    ws.send(
-      JSON.stringify({
-        type: "chat",
-        payload: {
-          message: text,
-          //@ts-ignore
-          email: user.email,
-          roomId: roomId,
-        },
-      })
-    );
-  }
+  //TEST
+  // const [activeChatId, setActiveChatId] = useState<number | null>(1);
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 640);
+  const [showChatWindow, setShowChatWindow] = useState(false);
 
-  function createNewRoom(emails: string[]) {
-    if (!ws) {
-      return;
+  // Handle showing the active chat window on mobile
+  const handleChatSelect = (id: number) => {
+    setActiveChatId(id);
+    if (selectedUsers.length > 0) {
+      setSelectedUsers([]);
     }
-    //send request to Backend route with all Emails to be added to new room
-    let userEmails: string[] = emails;
-    //@ts-ignore
-    userEmails.push(user.email);
+    if (isMobile) {
+      setShowChatWindow(true);
+    }
+  };
 
-    console.log(userEmails);
+  // Handle closing the active chat on mobile
+  const handleCloseChat = () => {
+    setShowChatWindow(false);
+  };
 
-    axios
-      .post(
-        `${BACKEND_URL}/api/dashboard/create-new-chat`,
-        { emails: userEmails },
-        {
-          withCredentials: true,
-        }
-      )
-      .then((res) => {
-        let newRoomId = res.data;
-        console.log(newRoomId);
+  // Listen for window resize to switch between mobile/desktop logic
+  useEffect(() => {
+    const handleResize = () => {
+      const mobileView = window.innerWidth <= 640;
+      setIsMobile(mobileView);
+      // If resizing to desktop, always hide the mobile overlay
+      if (!mobileView) {
+        setShowChatWindow(false);
+      }
+    };
 
-        //WS-Send "AskToJoin" event for others
-        for (const email in userEmails) {
-          console.log("Sending out AskToJoin");
-          ws.send(
-            JSON.stringify({
-              type: "asktojoin",
-              payload: {
-                roomId: newRoomId,
-                //@ts-ignore
-                email: email,
-              },
-            })
-          );
-        }
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
-        //Update the state for current user as a new room was joined
-        setRoomids((prev) => [...prev, newRoomId]);
-      })
-      .catch((err) => {
-        console.log("Error creating new Room");
-        console.log(err);
-      });
-  }
+  // Determine which panes to show
+  const showChatListPane = !isMobile || !showChatWindow;
+  const showActiveChatPane = !isMobile || showChatWindow;
 
   return (
     <div className="bg-red-200">
-      <div className="h-[95vh]">
-        {msgs.map((msg) => (
-          <div className="bg-white text-black rounded p-4">{msg}</div>
-        ))}
-      </div>
-      <div>
-        {allChatsOrder.length > 0 ? (
-          allChatsOrder.map((chatid) => <p>{chatid}</p>)
-        ) : (
-          <p>Loading Chats....</p>
-        )}
-      </div>
-      <div>
-        {roomids.length === 0 ? (
-          <p>No rooms joined yet.</p>
-        ) : (
-          roomids.map((roomId) => (
-            <div
-              key={roomId}
-              style={{ marginBottom: "1rem", backgroundColor: "slategray" }}
-            >
-              <h3>Room {roomId}</h3>
-              {allMessages[roomId]?.length > 0 ? (
-                allMessages[roomId].map((msg, index) => (
-                  <p key={index}>
-                    <strong>{msg.email}:</strong> {msg.text}
-                  </p>
-                ))
-              ) : (
-                <p>No messages yet.</p>
-              )}
-            </div>
-          ))
-        )}
-      </div>
-      <div>
-        <button
-          className="bg-green-600 text-white p-4"
-          onClick={() => createNewRoom(["tradingcrypto147@gmail.com"])}
-        >
-          Create New Room
-        </button>
-      </div>
-      {activeChatId && (
-        <div className="w-full bg-white flex">
-          <input ref={inputRef} className="flex-1 p-4"></input>
-          <button
-            className="bg-purple-600 text-white p-4"
-            onClick={() =>
-              sendMessageToSocket(inputRef.current?.value, activeChatId)
-            }
-          >
-            Send Message
-          </button>
+      <div className="flex flex-col h-screen font-sans bg-slate-100">
+        <Header />
+        <div className="flex flex-1 overflow-hidden">
+          <Sidebar />
+          <div className="flex flex-1 relative">
+            {showChatListPane && (
+              <div className="w-full sm:w-auto">
+                <ChatList onChatSelect={handleChatSelect} />
+              </div>
+            )}
+
+            {selectedUsers.length > 0 && socket && <NewChat socket={socket} />}
+
+            {showActiveChatPane && activeChatId && (
+              <div
+                className={`
+                flex-1 flex flex-col
+                ${
+                  isMobile
+                    ? "absolute top-0 left-0 w-full h-full bg-white z-10 transform transition-transform duration-300"
+                    : ""
+                }
+                ${isMobile && showChatWindow ? "translate-x-0" : ""}
+                ${isMobile && !showChatWindow ? "translate-x-full" : ""}
+             `}
+              >
+                <ActiveChat
+                  messages={allMessages}
+                  activeChatId={activeChatId}
+                  onClose={handleCloseChat}
+                  socket={socket}
+                />
+              </div>
+            )}
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 };

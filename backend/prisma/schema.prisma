@@ -12,6 +12,8 @@ model User {
   name String
   email String @unique
   password String
+  image String?
+  Chats Chats[]
 }
 
 model ChatMessages {
@@ -27,4 +29,14 @@ model ChatUserMapping {
   userEmail String
   chatId Int
   @@unique([userEmail, chatId])
+}
+
+model Chats {
+  id Int @id @default(autoincrement())
+  isGroup Boolean
+  chatName String
+  chatId Int @unique
+  createdAt String
+  createdBy String
+  user User @relation(fields: [createdBy], references: [email])
 }

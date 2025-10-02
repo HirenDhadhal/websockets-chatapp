@@ -93,6 +93,7 @@ export async function startMessageConsumer() {
                 sentAt: payload.timestamp,
               },
             });
+            //TODO => Clear Redis cache for the roomId and create new cache
           } catch (err) {
             console.error("Error adding CHAT event in Database: " + err);
           }

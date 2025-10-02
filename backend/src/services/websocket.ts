@@ -82,7 +82,8 @@ export function setupWebsocket(server: Server) {
           }
         } else if (type === "asktojoin") {
           //find the socket associated to userEmail, if present add entry in UserConnections
-          //no need to push this mapping to Kafka & DB [already done in route]
+          //no need to push this mapping to Kafka & DB [already done in API route]
+          
           for (const connection of UserConnections) {
             if (connection.email === email) {
               UserConnections.push({
@@ -90,6 +91,7 @@ export function setupWebsocket(server: Server) {
                 socket: connection.socket,
                 email,
               });
+              break;
             }
           }
         } else if (type === "rejoin") {
@@ -114,11 +116,11 @@ export function setupWebsocket(server: Server) {
             })
           );
 
-          //storing the last 50 meesages for each chatId
+          //storing the last 50 messages for each chatId
           await sendMessageToRedis(roomID, newMessage);
         }
       } catch (err) {
-        socket.send("Error in processing the message to Redis/Kafka");
+        socket.send("Error in sending the message");
         console.error("Error in processing the message to Redis/Kafka");
       }
     });
@@ -139,8 +141,8 @@ export function setupWebsocket(server: Server) {
         const timestamp = Date.now().toString();
 
         if (type == "chat") {
-          // Find all sockets for on this server in the same roomId and send message to them
-          UserConnections.forEach((conn) => {
+          // Find all sockets for on this server in the same roomId and send message to them          
+          UserConnections.forEach((conn) => {  
             if (
               conn.roomId === roomID &&
               conn.socket.readyState === WebSocket.OPEN
